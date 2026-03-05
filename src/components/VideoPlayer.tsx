@@ -10,36 +10,37 @@ interface VideoPlayerProps {
     video: VideoData | null;
     onClose: () => void;
     requestedTime?: number | null;
+    isActive?: boolean;
 }
 
-export default function VideoPlayer({ video, onClose, requestedTime }: VideoPlayerProps) {
+export default function VideoPlayer({ video, onClose, requestedTime, isActive = true }: VideoPlayerProps) {
     const [width, setWidth] = useState(100); // percentage
     const [isFloating, setIsFloating] = useState(false);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
-    const [isPlaying, setIsPlaying] = useState(true);
+    const [isPlaying, setIsPlaying] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
-        if (!videoRef.current || requestedTime === null || requestedTime === undefined) return;
+        if (!videoRef.current || requestedTime === null || requestedTime === undefined || !isActive) return;
 
-        // Ensure requestedTime is a valid number and avoid redundant seeking
         const timeToSeek = Number(requestedTime);
         if (isNaN(timeToSeek)) return;
 
         try {
             videoRef.current.currentTime = timeToSeek;
-            videoRef.current.play().catch(err => {
-                console.warn("Video playback interrupted or blocked:", err);
+            // Only play if it was requested specifically and we are active
+            videoRef.current.play().then(() => setIsPlaying(true)).catch(err => {
+                console.warn("Playback blocked:", err);
+                setIsPlaying(false);
             });
-            setIsPlaying(true);
         } catch (error) {
-            console.error("Error seeking video:", error);
+            console.error("Error seeking:", error);
         }
-    }, [requestedTime]);
+    }, [requestedTime, isActive]);
 
     useEffect(() => {
         const handleKeys = (e: KeyboardEvent) => {
-            if (!video || document.activeElement?.tagName === 'INPUT') return;
+            if (!video || !isActive || document.activeElement?.tagName === 'INPUT') return;
             const key = e.key.toLowerCase();
             if (videoRef.current) {
                 if (e.key === 'ArrowLeft') videoRef.current.currentTime -= 5;
@@ -52,7 +53,7 @@ export default function VideoPlayer({ video, onClose, requestedTime }: VideoPlay
         };
         window.addEventListener('keydown', handleKeys);
         return () => window.removeEventListener('keydown', handleKeys);
-    }, [video]);
+    }, [video, isActive]);
 
     const togglePlay = () => {
         if (videoRef.current) {
@@ -139,7 +140,6 @@ export default function VideoPlayer({ video, onClose, requestedTime }: VideoPlay
                 <video
                     ref={videoRef}
                     src={video.url}
-                    autoPlay
                     playsInline
                     preload="auto"
                     className="w-full h-full cursor-pointer"
@@ -190,4 +190,3 @@ export default function VideoPlayer({ video, onClose, requestedTime }: VideoPlay
         </Card>
     );
 }
-

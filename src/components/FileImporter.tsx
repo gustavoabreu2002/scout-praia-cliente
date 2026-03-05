@@ -38,52 +38,79 @@ export default function FileImporter({ onDataLoaded }: Props) {
                 const wb = XLSX.read(bstr, { type: 'binary' });
 
                 // Process Scout / Ações
-                const scoutSheetName = wb.SheetNames.find(n => n.toLowerCase().includes('scout') || n.toLowerCase().includes('acoes'));
+                const scoutSheetName = wb.SheetNames.find(n => {
+                    const low = n.toLowerCase();
+                    return low.includes('scout') || low.includes('acoes') || low.includes('ações') || low.includes('acao') || low.includes('ação');
+                });
+
                 if (scoutSheetName) {
                     const data = XLSX.utils.sheet_to_json(wb.Sheets[scoutSheetName]) as any[];
                     const mappedActions: GameAction[] = data.map((row: any) => {
                         // Handle name variations and encoding issues
-                        const actionType = row['Ação'] || row['AÃ\u0087Ã\u0083O'] || row['acao'] || '';
-                        const equipe = row['equipe'] || row['Equipe'] || '';
+                        const actionType = row['Ação'] || row['AÃ\u0087Ã\u0083O'] || row['ACAO'] || row['acao'] || '';
+                        const equipe = (row['equipe'] || row['Equipe'] || '').toString();
 
                         return {
-                            RallyID: parseInt(row['Rally'] || row['rally'] || '0'),
+                            RallyID: parseInt(row['Rally ID'] || row['Rally'] || row['rally'] || '0'),
                             Acao: actionType,
-                            Equipe: equipe.includes('B') ? 'Equipe B' : 'Equipe A',
+                            Equipe: equipe.toUpperCase().includes('B') ? 'Equipe B' : 'Equipe A',
                             Jogador: row['Jogador'] || row['jogador'] || '',
                             Tipo: row['Tipo'] || row['tipo'] || '',
                             Qualidade: row['Qualidade'] || row['qualidade'] || '',
-                            ZonaOrigem: row['Zona Origem'] || row['zona_origem'] || '',
-                            ZonaDestino: row['Zona Destino'] || row['zona_destino'] || '',
+                            ZonaOrigem: row['Zona Orig'] || row['Zona Origem'] || row['zona_origem'] || '',
+                            ZonaDestino: row['Zona Dest'] || row['Zona Destino'] || row['zona_destino'] || '',
                             Resultado: row['Resultado'] || row['resultado'] || '',
-                            Tempo: row['Tempo'] || row['tempo'] || '',
+                            Tempo: row['Timestamp'] || row['Tempo'] || row['tempo'] || '',
                             PontosEquipeA: parseInt(row['Pontos A'] || row['pontos_a'] || '0'),
                             PontosEquipeB: parseInt(row['Pontos B'] || row['pontos_b'] || '0'),
-                            Lado: row['Lado'] || row['lado'] || 'Bom'
+                            Lado: row['Lado'] || row['lado'] || 'Bom',
+                            Registro: row['Registro'] || row['registro'] || ''
                         } as GameAction;
                     });
                     setActions(mappedActions);
                 }
 
                 // Process Rallies / Video
-                const ralliesSheetName = wb.SheetNames.find(n => n.toLowerCase().includes('rallies') || n.toLowerCase().includes('partida_videos'));
+                const ralliesSheetName = wb.SheetNames.find(n => {
+                    const low = n.toLowerCase();
+                    return low.includes('rallies') || low.includes('ralis') || low.includes('rally') || low.includes('partida_videos');
+                });
                 if (ralliesSheetName) {
                     const data = XLSX.utils.sheet_to_json(wb.Sheets[ralliesSheetName]) as any[];
                     const firstRow = data[0];
                     if (firstRow) {
                         let videoRallies: Rally[] = [];
-                        try {
-                            const rawRallies = firstRow['video_rallies'] || [];
-                            videoRallies = typeof rawRallies === 'string' ? JSON.parse(rawRallies) : rawRallies;
 
-                            // Ensure Sec variants are present
-                            videoRallies = videoRallies.map(r => ({
-                                ...r,
-                                startTimeSec: r.startTimeSec || parseTime(r.startTime),
-                                endTimeSec: r.endTimeSec || parseTime(r.endTime)
+                        // Check if it's the legacy format (JSON in video_rallies column) 
+                        // or the new tabular format (each row is a rally)
+                        if (firstRow['video_rallies']) {
+                            try {
+                                const rawRallies = firstRow['video_rallies'];
+                                videoRallies = typeof rawRallies === 'string' ? JSON.parse(rawRallies) : rawRallies;
+
+                                // Ensure Sec variants are present
+                                videoRallies = videoRallies.map(r => ({
+                                    ...r,
+                                    startTimeSec: r.startTimeSec || parseTime(r.startTime),
+                                    endTimeSec: r.endTimeSec || parseTime(r.endTime)
+                                }));
+                            } catch (e) {
+                                console.warn('Falha ao processar JSON de ralis:', e);
+                            }
+                        } else if (firstRow['Rally ID'] || firstRow['Início (s)'] || firstRow['startTimeSec']) {
+                            // tabular format
+                            videoRallies = data.map((row: any) => ({
+                                id: parseInt(row['Rally ID'] || row['Rally'] || row['id'] || '0'),
+                                startTime: row['Início (UTC)'] || row['startTime'] || '',
+                                endTime: row['Fim (UTC)'] || row['endTime'] || '',
+                                startTimeSec: typeof row['Início (s)'] === 'string'
+                                    ? parseFloat(row['Início (s)'].replace(',', '.'))
+                                    : (row['Início (s)'] || row['startTimeSec'] || 0),
+                                endTimeSec: typeof row['Fim (s)'] === 'string'
+                                    ? parseFloat(row['Fim (s)'].replace(',', '.'))
+                                    : (row['Fim (s)'] || row['endTimeSec'] || 0),
+                                set: parseInt(row['Set'] || row['set'] || '1')
                             }));
-                        } catch (e) {
-                            console.warn('Falha ao processar JSON de ralis:', e);
                         }
 
                         setRallies(videoRallies);

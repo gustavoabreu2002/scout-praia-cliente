@@ -2,11 +2,14 @@ import { useMemo, useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Target, TrendingUp, AlertTriangle, Users, Play, Film, Clock, Filter, MapPin, Zap, Star, Activity, Maximize2, Minimize2, Move, BarChart3 } from 'lucide-react';
-import type { GameAction, TeamId, ActionType, Rally, VideoData } from '@/types/game';
+import { Target, TrendingUp, AlertTriangle, Users, Play, Film, Clock, Filter, MapPin, Zap, Star, Activity, Maximize2, Minimize2, Move, BarChart3, Check, ChevronDown, ArrowRight, Shield, Swords, Info } from 'lucide-react';
+import type { GameAction, TeamId, ActionType, Rally, VideoData, CourtSide } from '@/types/game';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface Props {
     actions: GameAction[];
@@ -14,18 +17,22 @@ interface Props {
     teamB: string[];
     videoRallies: Rally[];
     videoSource: VideoData | null;
+    currentSideA?: CourtSide;
+    currentSideB?: CourtSide;
     onPlayTime?: (time: number) => void;
 }
 
-export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies, videoSource, onPlayTime }: Props) {
+export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies, videoSource, onPlayTime, currentSideA, currentSideB }: Props) {
     // Advanced Filters
     const [filterTeam, setFilterTeam] = useState<string>('all');
     const [filterPlayer, setFilterPlayer] = useState<string>('all');
     const [filterAction, setFilterAction] = useState<string>('all');
     const [filterQuality, setFilterQuality] = useState<string>('all');
+    const [filterResult, setFilterResult] = useState<string>('all');
+    const [filterType, setFilterType] = useState<string>('all');
     const [filterSide, setFilterSide] = useState<string>('all');
-    const [filterZoneOrigin, setFilterZoneOrigin] = useState<string>('all');
-    const [filterZoneDest, setFilterZoneDest] = useState<string>('all');
+    const [filterZoneOrigin, setFilterZoneOrigin] = useState<string[]>(['all']);
+    const [filterZoneDest, setFilterZoneDest] = useState<string[]>(['all']);
     const [scoreMin, setScoreMin] = useState<string>('');
     const [scoreMax, setScoreMax] = useState<string>('');
 
@@ -53,15 +60,26 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
         return Array.from(qs).sort();
     }, [actions, filterAction]);
 
+    // 🔄 Reactive Logic: Types based on Action
+    const typesForFilter = useMemo(() => {
+        const ts = new Set<string>();
+        actions.forEach(a => {
+            if ((filterAction === 'all' || a.Acao === filterAction) && a.Tipo) {
+                ts.add(a.Tipo);
+            }
+        });
+        return Array.from(ts).sort();
+    }, [actions, filterAction]);
+
     const filteredActions = useMemo(() => {
         return actions.filter(a => {
             const matchTeam = filterTeam === 'all' || a.Equipe === filterTeam;
             const matchPlayer = filterPlayer === 'all' || a.Jogador === filterPlayer;
             const matchAction = filterAction === 'all' || a.Acao === filterAction;
             const matchQuality = filterQuality === 'all' || a.Qualidade === filterQuality;
+            const matchResult = filterResult === 'all' || a.Resultado === filterResult;
+            const matchType = filterType === 'all' || a.Tipo === filterType;
 
-            // Dynamic Side Filter: If a team is selected, we filter by that team's side state
-            // If no team is selected, Lado is checked normally.
             const matchSide = filterSide === 'all' || a.Lado === filterSide;
 
             const scoreToInpect = filterTeam === 'Equipe B' ? a.PontosEquipeB : a.PontosEquipeA;
@@ -69,12 +87,12 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
             const maxS = scoreMax === '' ? 999 : parseInt(scoreMax);
             const matchScore = scoreToInpect >= minS && scoreToInpect <= maxS;
 
-            const matchZoneOrigin = filterZoneOrigin === 'all' || String(a.ZonaOrigem) === filterZoneOrigin;
-            const matchZoneDest = filterZoneDest === 'all' || String(a.ZonaDestino) === filterZoneDest;
+            const matchZoneOrigin = filterZoneOrigin.includes('all') || filterZoneOrigin.includes(String(a.ZonaOrigem));
+            const matchZoneDest = filterZoneDest.includes('all') || filterZoneDest.includes(String(a.ZonaDestino));
 
-            return matchTeam && matchPlayer && matchAction && matchQuality && matchSide && matchZoneOrigin && matchZoneDest && matchScore;
+            return matchTeam && matchPlayer && matchAction && matchQuality && matchResult && matchType && matchSide && matchZoneOrigin && matchZoneDest && matchScore;
         });
-    }, [actions, filterTeam, filterPlayer, filterAction, filterQuality, filterSide, filterZoneOrigin, filterZoneDest, scoreMin, scoreMax]);
+    }, [actions, filterTeam, filterPlayer, filterAction, filterQuality, filterResult, filterType, filterSide, filterZoneOrigin, filterZoneDest, scoreMin, scoreMax]);
 
     const associatedRallies = useMemo(() => {
         const uniqueRallyIds = Array.from(new Set(filteredActions.map(a => a.RallyID)));
@@ -111,25 +129,6 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
         return { total, points, errors, efficiency, bestStroke };
     }, [filteredActions]);
 
-    const zoneIncidence = useMemo(() => {
-        const counts: Record<string, number> = {};
-        filteredActions.forEach(a => {
-            if (a.ZonaDestino) {
-                const key = `${a.Equipe === 'Equipe A' ? 'B' : 'A'}_${a.ZonaDestino}`;
-                counts[key] = (counts[key] || 0) + 1;
-            }
-        });
-        return counts;
-    }, [filteredActions]);
-
-    const maxIncidence = Math.max(...Object.values(zoneIncidence), 1);
-
-    const getHeatColor = (count: number) => {
-        if (!count) return 'transparent';
-        const intensity = count / maxIncidence;
-        return `hsl(var(--accent) / ${0.1 + intensity * 0.8})`;
-    };
-
     const zoneDistribution = useMemo(() => {
         const labels = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Fora Quadra', 'Rede', 'Blockout'];
         const counts: Record<string, number> = {};
@@ -149,8 +148,6 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
 
     return (
         <div className="space-y-6 pb-20 animate-in fade-in slide-in-from-bottom-2 duration-700 relative">
-
-
             {/* Filters Card */}
             <Card className="border-border/40 bg-card/50 backdrop-blur-xl shadow-lg border-t-accent/30">
                 <CardContent className="p-6">
@@ -183,6 +180,16 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
                             {qualitiesForFilter.map(q => <SelectItem key={q} value={q}>{q}</SelectItem>)}
                         </FilterSelect>
 
+                        <FilterSelect label="Resultado" value={filterResult} onChange={setFilterResult}>
+                            <SelectItem value="all">Qualquer Resultado</SelectItem>
+                            {['Ponto', 'Erro', 'Continuidade'].map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                        </FilterSelect>
+
+                        <FilterSelect label="Tipo" value={filterType} onChange={setFilterType}>
+                            <SelectItem value="all">Qualquer Tipo</SelectItem>
+                            {typesForFilter.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                        </FilterSelect>
+
                         <FilterSelect label={filterTeam === 'Equipe B' ? "Lado Equipe B" : "Lado Equipe A"} value={filterSide} onChange={setFilterSide}>
                             <SelectItem value="all">Ambos Lados</SelectItem>
                             <SelectItem value="Bom">Lado Bom</SelectItem>
@@ -198,15 +205,20 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
                         </div>
                     </div>
 
+
                     <div className="grid grid-cols-2 lg:grid-cols-2 gap-4 mt-4 pt-4 border-t border-white/5">
-                        <FilterSelect label="Origem da Bola (Zona)" value={filterZoneOrigin} onChange={setFilterZoneOrigin}>
-                            <SelectItem value="all">Todas as Origens</SelectItem>
-                            {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Entrada', 'Meio', 'Saída'].map(z => <SelectItem key={z} value={z}>{z}</SelectItem>)}
-                        </FilterSelect>
-                        <FilterSelect label="Destino da Bola (Zona)" value={filterZoneDest} onChange={setFilterZoneDest}>
-                            <SelectItem value="all">Todos os Destinos</SelectItem>
-                            {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Fora Quadra', 'Rede', 'Blockout'].map(z => <SelectItem key={z} value={z}>{z}</SelectItem>)}
-                        </FilterSelect>
+                        <MultiFilterSelect
+                            label="Origem da Bola (Zona)"
+                            options={['all', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Entrada', 'Meio', 'Saída']}
+                            values={filterZoneOrigin}
+                            onChange={setFilterZoneOrigin}
+                        />
+                        <MultiFilterSelect
+                            label="Destino da Bola (Zona)"
+                            options={['all', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Fora Quadra', 'Rede', 'Blockout']}
+                            values={filterZoneDest}
+                            onChange={setFilterZoneDest}
+                        />
                     </div>
                 </CardContent>
             </Card>
@@ -221,33 +233,43 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Heatmap Section */}
-                <Card className="lg:col-span-5 border-border/40 bg-card/30 backdrop-blur-md overflow-hidden">
+                {/* Visualizer Section */}
+                <Card className="lg:col-span-12 border-border/40 bg-card/30 backdrop-blur-md overflow-hidden">
                     <CardHeader className="p-4 border-b border-white/5 bg-accent/5">
                         <CardTitle className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                            <MapPin className="w-3 h-3 text-accent" /> Inteligência de Quadra (Incidência)
+                            <MapPin className="w-3 h-3 text-accent" /> Inteligência de Quadra (Incidência e Trajetórias)
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="p-8">
-                        <div className="flex flex-col gap-4 max-w-[320px] mx-auto">
-                            <div className="space-y-2">
-                                {/* ADVERSARY FIELD (TOP) - ESPELHADO */}
-                                <CourtGrid team="A" incidence={zoneIncidence} getHeatColor={getHeatColor} rotated mirrored />
+                        <div className="flex flex-col lg:flex-row gap-12 items-center justify-center">
+                            <div className="w-full max-w-[400px]">
+                                <CourtVisualizer
+                                    actions={filteredActions}
+                                    teamA={actions.length > 0 ? (actions[0].Equipe === 'Equipe A' ? 'Equipe A' : 'Equipe B') : 'A'}
+                                    sideA={currentSideA}
+                                    sideB={currentSideB}
+                                />
+                            </div>
 
-                                <div className="flex flex-col items-center py-4 relative">
-                                    <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-destructive/50 to-transparent blur-[1px]" />
-                                    <div className="px-4 py-1 bg-destructive text-[9px] font-black text-white rounded-full uppercase absolute -top-1.5 border border-white/20 shadow-xl tracking-tighter">Linha de Bloqueio</div>
+                            {/* Legend */}
+                            <div className="flex flex-col gap-4 bg-zinc-900/40 p-6 rounded-2xl border border-white/5 min-w-[200px]">
+                                <h4 className="text-[10px] font-black uppercase tracking-widest text-accent mb-2">Legenda de Ações</h4>
+                                <div className="grid grid-cols-1 gap-3">
+                                    <LegendItem color="#3b82f6" label="Saque" icon={<Move className="w-3 h-3" />} />
+                                    <LegendItem color="#14b8a6" label="Recepção" icon={<Info className="w-3 h-3" />} />
+                                    <LegendItem color="#eab308" label="Levantamento" icon={<Target className="w-3 h-3" />} />
+                                    <LegendItem color="#ef4444" label="Ataque" icon={<Swords className="w-3 h-3" />} />
+                                    <LegendItem color="#a855f7" label="Bloqueio" icon={<Shield className="w-3 h-3" />} />
+                                    <LegendItem color="#22c55e" label="Defesa" icon={<Activity className="w-3 h-3" />} />
+                                    <LegendItem color="#f97316" label="Bola de Segunda" icon={<Zap className="w-3 h-3" />} />
                                 </div>
-
-                                {/* OUR FIELD (BOTTOM) - NORMAL */}
-                                <CourtGrid team="B" incidence={zoneIncidence} getHeatColor={getHeatColor} />
                             </div>
                         </div>
                     </CardContent>
                 </Card>
 
                 {/* Chart Section */}
-                <Card className="lg:col-span-4 border-border/40 bg-card/30 backdrop-blur-md">
+                <Card className="lg:col-span-8 border-border/40 bg-card/30 backdrop-blur-md">
                     <CardHeader className="p-4 px-5 flex flex-row items-center justify-between border-b border-white/5">
                         <CardTitle className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                             <BarChart3 className="w-3 h-3 text-accent" /> Histograma de Zona Destino
@@ -293,7 +315,7 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
                 </Card>
 
                 {/* Clips Sidebar */}
-                <Card className="lg:col-span-3 border-border/40 bg-card/50 shadow-2xl flex flex-col max-h-[460px]">
+                <Card className="lg:col-span-4 border-border/40 bg-card/50 shadow-2xl flex flex-col max-h-[460px]">
                     <CardHeader className="p-4 border-b border-white/5 bg-accent/5">
                         <CardTitle className="text-[10px] font-black uppercase tracking-widest text-accent flex items-center justify-between">
                             <span>ARQUIVO DE VÍDEO</span>
@@ -316,57 +338,351 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
                     </CardContent>
                 </Card>
             </div>
-
         </div>
     );
 }
 
-function CourtGrid({ team, incidence, getHeatColor, rotated = false, mirrored = false }: { team: string; incidence: Record<string, number>; getHeatColor: (n: number) => string; rotated?: boolean; mirrored?: boolean }) {
-    // 🏐 Volleyball Zone Geometry
-    // NET ROW: 4  3  2
-    // MID ROW: 7  8  9
-    // BACK ROW: 5  6  1
+// --- HELPER COMPONENTS ---
 
-    // For mirroring (espelhado), the columns are reversed:
-    // Row 1: 2  3  4
-    // Row 2: 9  8  7
-    // Row 3: 1  6  5
+function MultiFilterSelect({ label, options, values, onChange }: { label: string; options: string[]; values: string[]; onChange: (v: string[]) => void }) {
+    const toggleOption = (option: string) => {
+        if (option === 'all') {
+            onChange(['all']);
+            return;
+        }
 
+        let newValues = [...values].filter(v => v !== 'all');
+        if (newValues.includes(option)) {
+            newValues = newValues.filter(v => v !== option);
+            if (newValues.length === 0) newValues = ['all'];
+        } else {
+            newValues.push(option);
+        }
+        onChange(newValues);
+    };
+
+    return (
+        <div className="space-y-1.5 font-bold">
+            <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider ml-0.5 opacity-60">{label}</label>
+            <Popover>
+                <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full h-9 bg-zinc-900/60 border-white/5 rounded-xl text-[10px] font-black justify-between hover:border-accent/30 transition-all px-3">
+                        <div className="flex gap-1 overflow-hidden">
+                            {values.includes('all') ? (
+                                <span className="opacity-50">Todos</span>
+                            ) : (
+                                values.map(v => (
+                                    <Badge key={v} variant="secondary" className="h-5 text-[10px] px-1 bg-accent/20 text-accent border-accent/20">
+                                        {v}
+                                    </Badge>
+                                ))
+                            )}
+                        </div>
+                        <ChevronDown className="w-3 h-3 opacity-50" />
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[240px] p-2 bg-zinc-950 border-white/10 rounded-xl backdrop-blur-2xl">
+                    <div className="grid gap-1">
+                        {options.map(option => (
+                            <div
+                                key={option}
+                                className={cn(
+                                    "flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors hover:bg-white/5",
+                                    values.includes(option) && "bg-white/5"
+                                )}
+                                onClick={() => toggleOption(option)}
+                            >
+                                <Checkbox checked={values.includes(option)} onCheckedChange={() => toggleOption(option)} />
+                                <span className="text-[10px] font-bold uppercase">{option === 'all' ? 'Selecionar Todos' : option}</span>
+                            </div>
+                        ))}
+                    </div>
+                </PopoverContent>
+            </Popover>
+        </div>
+    );
+}
+
+function LegendItem({ color, label, icon }: { color: string, label: string, icon: React.ReactNode }) {
+    return (
+        <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded flex items-center justify-center border border-white/5 bg-zinc-800/50" style={{ color }}>
+                {icon}
+            </div>
+            <span className="text-[10px] font-black uppercase text-muted-foreground">{label}</span>
+            <div className="flex-1 border-b border-dashed border-white/10" />
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+        </div>
+    );
+}
+
+function CourtVisualizer({ actions, teamA, sideA, sideB }: { actions: GameAction[], teamA: string, sideA?: CourtSide, sideB?: CourtSide }) {
+    const { courtIncidence, netIncidence } = useMemo(() => {
+        const cCounts: Record<string, number> = {};
+        const nCounts: Record<string, number> = {};
+
+        actions.forEach(a => {
+            // Standard court destination (where the ball lands)
+            if (a.ZonaDestino && !['Levantamento'].includes(a.Acao)) {
+                // For non-setting actions, destination is the court grid
+                if (typeof a.ZonaDestino === 'number' || !isNaN(Number(a.ZonaDestino))) {
+                    // Reception (Recepção) destination should be on the SAME side as the team
+                    // Attacks (Ataque) and Serves (Saque) destination should be on the OPPOSITE side
+                    const isInternalAction = ['Recepção', 'Defesa'].includes(a.Acao);
+                    const targetTeam = isInternalAction ? a.Equipe : (a.Equipe === 'Equipe A' ? 'Equipe B' : 'Equipe A');
+
+                    const key = `${targetTeam === 'Equipe A' ? 'A' : 'B'}_${a.ZonaDestino}`;
+                    cCounts[key] = (cCounts[key] || 0) + 1;
+                }
+            }
+
+            // Net Zones for setting destination or attack origin
+            if (a.Acao === 'Levantamento' && a.ZonaDestino) {
+                const key = `${a.Equipe}_NET_${a.ZonaDestino}`;
+                nCounts[key] = (nCounts[key] || 0) + 1;
+            }
+            if (a.Acao === 'Ataque' && a.ZonaOrigem) {
+                // If attack origin is 1-5, it's a net zone
+                const zNum = Number(a.ZonaOrigem);
+                if (!isNaN(zNum) && zNum >= 1 && zNum <= 5) {
+                    const key = `${a.Equipe}_NET_${a.ZonaOrigem}`;
+                    nCounts[key] = (nCounts[key] || 0) + 1;
+                }
+            }
+        });
+        return { courtIncidence: cCounts, netIncidence: nCounts };
+    }, [actions]);
+
+    const maxInc = Math.max(...Object.values(courtIncidence), ...Object.values(netIncidence), 1);
+    const getHeatColor = (count: number) => {
+        if (!count) return 'transparent';
+        const intensity = count / maxInc;
+        return `hsl(var(--accent) / ${0.1 + intensity * 0.8})`;
+    };
+
+    const visualActions = useMemo(() => {
+        return actions.filter(a => a.ZonaOrigem && a.ZonaDestino);
+    }, [actions]);
+
+    return (
+        <div className="relative w-full aspect-[9/18] bg-black/40 rounded-3xl border-[6px] border-zinc-800/50 shadow-2xl overflow-hidden group">
+            <svg viewBox="0 0 100 200" className="absolute inset-0 w-full h-full pointer-events-none z-10 drop-shadow-2xl">
+                <line x1="0" y1="100" x2="100" y2="100" stroke="hsl(var(--destructive))" strokeWidth="2" strokeDasharray="3 2" opacity="0.8" />
+                <line x1="0" y1="66.6" x2="100" y2="66.6" stroke="white" strokeWidth="0.5" opacity="0.1" />
+                <line x1="0" y1="133.3" x2="100" y2="133.3" stroke="white" strokeWidth="0.5" opacity="0.1" />
+
+                {visualActions.map((a, i) => {
+                    const start = getZoneCoords(a.Equipe, a.ZonaOrigem, a.Acao, true);
+
+                    // Logical redirection: Reception and Setting stay on the same side. 
+                    // Attack and Serve go to the other side.
+                    const isInternalAction = ['Recepção', 'Levantamento', 'Defesa'].includes(a.Acao);
+                    const destinationTeam = isInternalAction ? a.Equipe : (a.Equipe === 'Equipe A' ? 'Equipe B' : 'Equipe A');
+
+                    const end = getZoneCoords(destinationTeam, a.ZonaDestino, a.Acao, false);
+                    if (!start || !end) return null;
+
+                    const color = getActionColor(a.Acao);
+                    const id = `arrow-${i}`;
+
+                    return (
+                        <g key={id} opacity={0.5} className="hover:opacity-100 transition-opacity">
+                            <defs>
+                                <marker id={`head-${id}`} markerWidth="8" markerHeight="8" refX="7" refY="4" orientation="auto">
+                                    <path d="M0,0 L0,8 L8,4 Z" fill={color} />
+                                </marker>
+                            </defs>
+                            <path
+                                d={`M${start.x},${start.y} Q${(start.x + end.x) / 2},${(start.y + end.y) / 2 - 5} ${end.x},${end.y}`}
+                                fill="none"
+                                stroke={color}
+                                strokeWidth="0.8"
+                                markerEnd={`url(#head-${id})`}
+                                className="drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]"
+                            />
+                        </g>
+                    );
+                })}
+            </svg>
+
+            <div className="absolute inset-0 grid grid-rows-2 p-1 bg-zinc-950/20">
+                <div className="relative border-b border-white/5 rounded-t-2xl overflow-hidden">
+                    <div className="absolute top-4 left-4 flex flex-col gap-1 z-20">
+                        <Badge variant="outline" className={cn(
+                            "text-[9px] font-black uppercase tracking-widest px-2 py-0.5",
+                            sideA === 'Bom' ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/30" : "bg-destructive/20 text-destructive border-destructive/30"
+                        )}>
+                            <Shield className="w-3 h-3 mr-1.5" /> {teamA}
+                        </Badge>
+                        <span className={cn(
+                            "text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded backdrop-blur-md self-start border",
+                            sideA === 'Bom' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-destructive/10 text-destructive border-destructive/20"
+                        )}>
+                            LADO {sideA === 'Bom' ? 'BOM' : 'RUIM'}
+                        </span>
+                    </div>
+                    <SideGrid team="A" courtIncidence={courtIncidence} netIncidence={netIncidence} getHeatColor={getHeatColor} mirrored />
+                </div>
+
+                <div className="relative rounded-b-2xl overflow-hidden">
+                    <div className="absolute bottom-4 right-4 flex flex-col items-end gap-1 z-20">
+                        <span className={cn(
+                            "text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded backdrop-blur-md self-end border",
+                            sideB === 'Bom' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-destructive/10 text-destructive border-destructive/20"
+                        )}>
+                            LADO {sideB === 'Bom' ? 'BOM' : 'RUIM'}
+                        </span>
+                        <Badge variant="outline" className={cn(
+                            "text-[9px] font-black uppercase tracking-widest px-2 py-0.5",
+                            sideB === 'Bom' ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/30" : "bg-destructive/20 text-destructive border-destructive/30"
+                        )}>
+                            <Shield className="w-3 h-3 mr-1.5" /> {teamA === 'Equipe A' ? 'Equipe B' : 'Equipe A'}
+                        </Badge>
+                    </div>
+                    <SideGrid team="B" courtIncidence={courtIncidence} netIncidence={netIncidence} getHeatColor={getHeatColor} />
+                </div>
+            </div>
+
+            <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-20 flex bg-zinc-950 border border-white/10 px-4 py-1.5 rounded-full items-center gap-5 shadow-2xl backdrop-blur-2xl text-white">
+                <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Lado Bom</span>
+                </div>
+                <div className="w-[1px] h-4 bg-white/10" />
+                <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Lado Ruim</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function SideGrid({ team, courtIncidence, netIncidence, getHeatColor, mirrored = false }: { team: string; courtIncidence: Record<string, number>; netIncidence: Record<string, number>; getHeatColor: (n: number) => string; mirrored?: boolean }) {
     const zones = [
         [4, 3, 2],
         [7, 8, 9],
         [5, 6, 1]
     ];
 
-    let displayRows = rotated ? [...zones].reverse() : zones;
+    let displayRows = team === 'A' ? [...zones].reverse() : zones;
+    if (mirrored) displayRows = displayRows.map(row => [...row].reverse());
 
-    if (mirrored) {
-        displayRows = displayRows.map(row => [...row].reverse());
-    }
-
-    const borderClass = team === 'A' ? 'border-team-a/30 bg-team-a/5' : 'border-team-b/30 bg-team-b/5';
+    const netSpots = [1, 2, 3, 4, 5];
+    const displayNet = mirrored ? [...netSpots].reverse() : netSpots;
 
     return (
-        <div className={cn("grid grid-rows-3 gap-1.5 p-1.5 border-[3px] rounded-2xl relative shadow-2xl", borderClass)}>
-            {displayRows.map((row, rIdx) => (
-                <div key={rIdx} className="grid grid-cols-3 gap-1.5">
-                    {row.map(z => (
-                        <div key={z} className="aspect-square relative rounded-xl border border-white/5 flex items-center justify-center transition-all duration-500 shadow-inner group"
-                            style={{ backgroundColor: getHeatColor(incidence[`${team}_${z}`] || 0) }}>
-                            <span className="text-[9px] font-black opacity-10 group-hover:opacity-40 transition-opacity">{z}</span>
-                            {incidence[`${team}_${z}`] > 0 && (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                    <span className="text-[12px] font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-                                        {incidence[`${team}_${z}`]}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-                    ))}
+        <div className="flex-1 flex flex-col gap-[1px] p-4 h-full">
+            {/* Net Zones Bar (1-5) for Team B (Top of field) */}
+            {team === 'B' && (
+                <div className="grid grid-cols-5 gap-1 mb-2 h-10 border-b border-white/10 pb-2">
+                    {displayNet.map(z => {
+                        const count = netIncidence[`Equipe B_NET_${z}`] || 0;
+                        return (
+                            <div key={z} className="relative flex items-center justify-center rounded border border-white/5 transition-all"
+                                style={{ backgroundColor: getHeatColor(count) }}>
+                                <span className="text-[6px] font-black opacity-30 absolute top-0.5 left-0.5">{z}</span>
+                                {count > 0 && <span className="text-[9px] font-black text-white">{count}</span>}
+                            </div>
+                        );
+                    })}
                 </div>
-            ))}
+            )}
+
+            {/* 1-9 Grid */}
+            <div className="flex-1 grid grid-rows-3 gap-[1px]">
+                {displayRows.map((row, rIdx) => (
+                    <div key={rIdx} className="grid grid-cols-3 gap-[1px]">
+                        {row.map(z => {
+                            const count = courtIncidence[`${team}_${z}`] || 0;
+                            return (
+                                <div key={z} className="relative flex items-center justify-center transition-all duration-500 group border border-white/5 rounded-lg"
+                                    style={{ backgroundColor: getHeatColor(count) }}>
+                                    <span className="text-[8px] font-black opacity-10 group-hover:opacity-40 transition-opacity absolute top-1.5 left-1.5">{z}</span>
+                                    {count > 0 && (
+                                        <span className="text-[12px] font-black text-white drop-shadow-lg z-10 transition-transform group-hover:scale-110">
+                                            {count}
+                                        </span>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                ))}
+            </div>
+
+            {/* Net Zones Bar (1-5) for Team A (Bottom of field) */}
+            {team === 'A' && (
+                <div className="grid grid-cols-5 gap-1 mt-2 h-10 border-t border-white/10 pt-2">
+                    {displayNet.map(z => {
+                        const count = netIncidence[`Equipe A_NET_${z}`] || 0;
+                        return (
+                            <div key={z} className="relative flex items-center justify-center rounded border border-white/5 transition-all"
+                                style={{ backgroundColor: getHeatColor(count) }}>
+                                <span className="text-[6px] font-black opacity-30 absolute top-0.5 left-0.5">{z}</span>
+                                {count > 0 && <span className="text-[9px] font-black text-white">{count}</span>}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
+}
+
+function getZoneCoords(team: TeamId, zone: number | string, action: ActionType, isOrigin: boolean): { x: number, y: number } | null {
+    const isTeamA = team === 'Equipe A';
+
+    // Team B Pos (Bottom field)
+    const teamBPos: Record<number, { x: number, y: number }> = {
+        4: { x: 16.6, y: 116.6 }, 3: { x: 50, y: 116.6 }, 2: { x: 83.3, y: 116.6 },
+        7: { x: 16.6, y: 150 }, 8: { x: 50, y: 150 }, 9: { x: 83.3, y: 150 },
+        5: { x: 16.6, y: 183.3 }, 6: { x: 50, y: 183.3 }, 1: { x: 83.3, y: 183.3 }
+    };
+
+    // Team A Pos (Top field) - Mirrored
+    const teamAPos: Record<number, { x: number, y: number }> = {
+        4: { x: 83.3, y: 83.3 }, 3: { x: 50, y: 83.3 }, 2: { x: 16.6, y: 83.3 },
+        7: { x: 83.3, y: 50 }, 8: { x: 50, y: 50 }, 9: { x: 16.6, y: 50 },
+        5: { x: 83.3, y: 16.6 }, 6: { x: 50, y: 16.6 }, 1: { x: 16.6, y: 16.6 }
+    };
+
+    if (typeof zone === 'number' || !isNaN(Number(zone))) {
+        const zNum = Number(zone);
+
+        // Logical Linking: Levantamento destination and Ataque origin are Net Zones 1-5
+        const isNetZoneAction = (action === 'Levantamento' && !isOrigin) || (action === 'Ataque' && isOrigin);
+
+        if (zNum >= 1 && zNum <= 5 && isNetZoneAction) {
+            // Levantamento destination or Attack origin - both use the net bar 1-5
+            if (isTeamA) return { x: 80 - (zNum - 1) * 15, y: 92 };
+            return { x: 20 + (zNum - 1) * 15, y: 108 };
+        }
+        return isTeamA ? teamAPos[zNum] : teamBPos[zNum];
+    }
+
+    // Special Origins/Destinations
+    if (zone === 'Entrada') return isTeamA ? { x: 85, y: -5 } : { x: 15, y: 205 };
+    if (zone === 'Meio') return { x: 50, y: isTeamA ? -5 : 205 };
+    if (zone === 'Saída') return isTeamA ? { x: 15, y: -5 } : { x: 85, y: 205 };
+    if (zone === 'Fora Quadra') return isTeamA ? { x: 50, y: 215 } : { x: 50, y: -15 };
+    if (zone === 'Rede') return { x: 50, y: 100 };
+    if (zone === 'Blockout') return { x: isTeamA ? 105 : -5, y: isTeamA ? 120 : 80 };
+
+    return null;
+}
+
+function getActionColor(action: ActionType): string {
+    const colors: Record<string, string> = {
+        'Saque': '#3b82f6',
+        'Recepção': '#14b8a6',
+        'Levantamento': '#eab308',
+        'Ataque': '#ef4444',
+        'Bloqueio': '#a855f7',
+        'Defesa': '#22c55e',
+        'Bola de Segunda': '#f97316'
+    };
+    return colors[action] || '#ffffff';
 }
 
 function FilterSelect({ label, value, onChange, children }: { label: string; value: string; onChange: (v: string) => void; children: React.ReactNode }) {
