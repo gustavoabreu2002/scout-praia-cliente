@@ -39,9 +39,19 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
 
     // 🔄 Reactive Logic: Filter Player based on Team
     const playersForFilter = useMemo(() => {
-        if (filterTeam === 'all') return [...teamA, ...teamB];
-        return filterTeam === 'Equipe A' ? teamA : teamB;
-    }, [filterTeam, teamA, teamB]);
+        // Deducing actual names from actions to ensure filter matches reality
+        const actualPlayersA = Array.from(new Set(actions.filter(a => a.Equipe === 'Equipe A').map(a => a.Jogador))).filter(Boolean).sort();
+        const actualPlayersB = Array.from(new Set(actions.filter(a => a.Equipe === 'Equipe B').map(a => a.Jogador))).filter(Boolean).sort();
+
+        const finalTeamA = actualPlayersA.length > 0 ? actualPlayersA : teamA;
+        const finalTeamB = actualPlayersB.length > 0 ? actualPlayersB : teamB;
+
+        if (filterTeam === 'all') {
+            const all = Array.from(new Set([...finalTeamA, ...finalTeamB])).sort();
+            return all;
+        }
+        return filterTeam === 'Equipe A' ? finalTeamA : finalTeamB;
+    }, [filterTeam, actions, teamA, teamB]);
 
     useEffect(() => {
         if (filterPlayer !== 'all' && !playersForFilter.includes(filterPlayer)) {
@@ -161,8 +171,12 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                         <FilterSelect label="Equipe Foco" value={filterTeam} onChange={setFilterTeam}>
                             <SelectItem value="all">Todas as Equipes</SelectItem>
-                            <SelectItem value="Equipe A">Equipe A</SelectItem>
-                            <SelectItem value="Equipe B">Equipe B</SelectItem>
+                            <SelectItem value="Equipe A">
+                                {teamA.length > 0 ? teamA.join(' / ') : 'Equipe A'}
+                            </SelectItem>
+                            <SelectItem value="Equipe B">
+                                {teamB.length > 0 ? teamB.join(' / ') : 'Equipe B'}
+                            </SelectItem>
                         </FilterSelect>
 
                         <FilterSelect label="Jogador" value={filterPlayer} onChange={setFilterPlayer}>
@@ -190,14 +204,14 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
                             {typesForFilter.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                         </FilterSelect>
 
-                        <FilterSelect label={filterTeam === 'Equipe B' ? "Lado Equipe B" : "Lado Equipe A"} value={filterSide} onChange={setFilterSide}>
+                        <FilterSelect label={filterTeam === 'Equipe B' ? `Lado ${teamB[0] || 'B'}` : `Lado ${teamA[0] || 'A'}`} value={filterSide} onChange={setFilterSide}>
                             <SelectItem value="all">Ambos Lados</SelectItem>
                             <SelectItem value="Bom">Lado Bom</SelectItem>
                             <SelectItem value="Ruim">Lado Ruim</SelectItem>
                         </FilterSelect>
 
                         <div className="space-y-1.5 flex flex-col">
-                            <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Placar {filterTeam === 'Equipe B' ? 'B' : 'A'} (Intervalo)</label>
+                            <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Placar {filterTeam === 'Equipe B' ? (teamB[0] || 'B') : (teamA[0] || 'A')} (Intervalo)</label>
                             <div className="flex gap-2">
                                 <Input placeholder="Início" value={scoreMin} onChange={e => setScoreMin(e.target.value)} className="h-9 bg-zinc-900/50 border-white/5 text-[10px] p-2" />
                                 <Input placeholder="Fim" value={scoreMax} onChange={e => setScoreMax(e.target.value)} className="h-9 bg-zinc-900/50 border-white/5 text-[10px] p-2" />
@@ -245,7 +259,7 @@ export default function AnalyticsDashboard({ actions, teamA, teamB, videoRallies
                             <div className="w-full max-w-[400px]">
                                 <CourtVisualizer
                                     actions={filteredActions}
-                                    teamA={actions.length > 0 ? (actions[0].Equipe === 'Equipe A' ? 'Equipe A' : 'Equipe B') : 'A'}
+                                    teamA={teamA.length > 0 ? teamA.join(' / ') : 'Equipe A'}
                                     sideA={currentSideA}
                                     sideB={currentSideB}
                                 />
@@ -472,14 +486,14 @@ function CourtVisualizer({ actions, teamA, sideA, sideB }: { actions: GameAction
                 <line x1="0" y1="133.3" x2="100" y2="133.3" stroke="white" strokeWidth="0.5" opacity="0.1" />
 
                 {visualActions.map((a, i) => {
-                    const start = getZoneCoords(a.Equipe, a.ZonaOrigem, a.Acao, true);
+                    const start = getZoneCoords(a.Equipe, a.ZonaOrigem!, a.Acao, true);
 
                     // Logical redirection: Reception and Setting stay on the same side. 
                     // Attack and Serve go to the other side.
                     const isInternalAction = ['Recepção', 'Levantamento', 'Defesa'].includes(a.Acao);
                     const destinationTeam = isInternalAction ? a.Equipe : (a.Equipe === 'Equipe A' ? 'Equipe B' : 'Equipe A');
 
-                    const end = getZoneCoords(destinationTeam, a.ZonaDestino, a.Acao, false);
+                    const end = getZoneCoords(destinationTeam, a.ZonaDestino!, a.Acao, false);
                     if (!start || !end) return null;
 
                     const color = getActionColor(a.Acao);

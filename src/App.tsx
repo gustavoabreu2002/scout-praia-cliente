@@ -2,8 +2,10 @@ import { useState } from 'react';
 import FileImporter from './components/FileImporter';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import VideoPlayer from './components/VideoPlayer';
+import AIVideoAnalysis from './components/AILab/AIVideoAnalysis';
 import { GameAction, Rally, VideoData } from './types/game';
 import { Button } from './components/ui/button';
+import { Card } from './components/ui/card';
 import { ChevronLeft, Share2, Download, BarChart2 } from 'lucide-react';
 
 interface LoadedData {
@@ -15,13 +17,24 @@ interface LoadedData {
 function App() {
     const [data, setData] = useState<LoadedData | null>(null);
     const [requestedTime, setRequestedTime] = useState<number | null>(null);
+    const [view, setView] = useState<'importer' | 'dashboard' | 'ailab'>('importer');
 
-    if (!data) {
+    if (view === 'importer') {
         return (
             <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-background to-background">
-                <FileImporter onDataLoaded={setData} />
+                <FileImporter
+                    onDataLoaded={(loadedData) => {
+                        setData(loadedData);
+                        setView('dashboard');
+                    }}
+                    onGoToAiLab={() => setView('ailab')}
+                />
             </div>
         );
+    }
+
+    if (view === 'ailab') {
+        return <AIVideoAnalysis onBack={() => setView('importer')} />;
     }
 
     return (
@@ -32,7 +45,10 @@ function App() {
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setData(null)}
+                        onClick={() => {
+                            setData(null);
+                            setView('importer');
+                        }}
                         className="gap-2 font-bold uppercase tracking-tighter text-[10px] opacity-60 hover:opacity-100"
                     >
                         <ChevronLeft className="w-4 h-4" />
@@ -41,7 +57,7 @@ function App() {
                     <div className="h-8 w-[1px] bg-border" />
                     <div className="space-y-0.5">
                         <h1 className="text-xl font-black tracking-tighter italic uppercase text-foreground">ScoutPro <span className="text-primary italic">Inside</span></h1>
-                        <p className="text-[9px] font-black uppercase text-muted-foreground tracking-[0.2em]">{data.video?.titulo || 'DASHBOARD ANALÍTICO'}</p>
+                        <p className="text-[9px] font-black uppercase text-muted-foreground tracking-[0.2em]">{data?.video?.titulo || 'DASHBOARD ANALÍTICO'}</p>
                     </div>
                 </div>
 
@@ -61,14 +77,21 @@ function App() {
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
                     {/* Main Analytics Area */}
                     <div className="xl:col-span-8 space-y-8">
-                        <AnalyticsDashboard
-                            actions={data.actions}
-                            teamA={[data.video?.equipeA?.jogador1 || 'Jogador 1', data.video?.equipeA?.jogador2 || 'Jogador 2']}
-                            teamB={[data.video?.equipeB?.jogador1 || 'Jogador 1', data.video?.equipeB?.jogador2 || 'Jogador 2']}
-                            videoRallies={data.rallies}
-                            videoSource={data.video}
-                            onPlayTime={(time) => setRequestedTime(time)}
-                        />
+                        {data && (() => {
+                            const actualTeamA = Array.from(new Set(data.actions.filter(a => a.Equipe === 'Equipe A').map(a => a.Jogador))).filter(Boolean);
+                            const actualTeamB = Array.from(new Set(data.actions.filter(a => a.Equipe === 'Equipe B').map(a => a.Jogador))).filter(Boolean);
+
+                            return (
+                                <AnalyticsDashboard
+                                    actions={data.actions}
+                                    teamA={actualTeamA.length > 0 ? actualTeamA : [data.video?.equipeA?.jogador1 || 'Jogador 1', data.video?.equipeA?.jogador2 || 'Jogador 2']}
+                                    teamB={actualTeamB.length > 0 ? actualTeamB : [data.video?.equipeB?.jogador1 || 'Jogador 1', data.video?.equipeB?.jogador2 || 'Jogador 2']}
+                                    videoRallies={data.rallies}
+                                    videoSource={data.video}
+                                    onPlayTime={(time) => setRequestedTime(time)}
+                                />
+                            );
+                        })()}
                     </div>
 
                     {/* Fixed Video Sidebar */}
@@ -78,7 +101,7 @@ function App() {
                             <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Vídeo da Análise</h2>
                         </div>
 
-                        {data.video?.url ? (
+                        {data?.video?.url ? (
                             <VideoPlayer
                                 video={data.video}
                                 onClose={() => { }}

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
-import { Upload, FileSpreadsheet, Film, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Upload, FileSpreadsheet, Film, AlertCircle, CheckCircle2, Sparkles, ChevronRight } from 'lucide-react';
 import { GameAction, Rally, VideoData, Team } from '@/types/game';
 
 interface Props {
@@ -11,9 +11,10 @@ interface Props {
         rallies: Rally[];
         video: VideoData | null;
     }) => void;
+    onGoToAiLab: () => void;
 }
 
-export default function FileImporter({ onDataLoaded }: Props) {
+export default function FileImporter({ onDataLoaded, onGoToAiLab }: Props) {
     const [actions, setActions] = useState<GameAction[]>([]);
     const [rallies, setRallies] = useState<Rally[]>([]);
     const [video, setVideo] = useState<VideoData | null>(null);
@@ -240,6 +241,23 @@ export default function FileImporter({ onDataLoaded }: Props) {
                     <p className="text-xs font-bold uppercase tracking-tight">{error}</p>
                 </div>
             )}
+
+            <div className="pt-4 border-t border-border/50">
+                <Button
+                    variant="ghost"
+                    className="w-full h-14 gap-4 bg-primary/5 hover:bg-primary/10 border border-primary/10 rounded-2xl group transition-all"
+                    onClick={onGoToAiLab}
+                >
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                        <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div className="text-left flex-1">
+                        <p className="text-xs font-black uppercase italic tracking-tighter">Laboratório de I.A.</p>
+                        <p className="text-[9px] text-muted-foreground uppercase font-bold opacity-60">Testar detecção automática (Gemini 3.1 Flash)</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
+                </Button>
+            </div>
         </div>
     );
 }
